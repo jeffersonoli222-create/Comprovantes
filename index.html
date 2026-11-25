@@ -606,6 +606,7 @@ table.list tbody tr:hover { background: var(--hover); }
   <symbol id="i-relink" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
   <symbol id="i-factory" viewBox="0 0 24 24"><path d="M3 21V10l6 4v-4l6 4V5h4v16"/><path d="M2 21h20M7 17h2M12 17h2M17 17h1"/></symbol>
   <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M20 11.5a8 8 0 0 1-11.6 7.1L4 20l1.4-4.2A8 8 0 1 1 20 11.5z"/><path d="M9 11.5h6M12 8.5v6"/></symbol>
   <symbol id="i-arrow-r" viewBox="0 0 24 24"><path d="M5 12h14m0 0-5-5m5 5-5 5"/></symbol>
 </svg>
 
@@ -655,6 +656,7 @@ table.list tbody tr:hover { background: var(--hover); }
         <input type="file" id="lote-file" multiple hidden>
       </div>
       <div id="ex-banner"></div>
+      <div id="wa-entrada"></div>
 
       <div class="filters card" id="filters">
         <div class="f-main">
@@ -1973,7 +1975,9 @@ function abrirForm(opts) {
 /* ================= Vários comprovantes de uma vez ================= */
 const MAX_LOTE = 40;
 const juntarLista = a => a.length > 1 ? a.slice(0, -1).join(", ") + " e " + a[a.length - 1] : (a[0] || "");
-function abrirLote(arquivos) {
+function abrirLote(arquivos, opts = {}) {
+  const avisar = (fn, f) => { try { if (opts[fn]) opts[fn](f); } catch (e) {} };
+  const mantido = f => !!(opts.mantido && opts.mantido(f));
   if (!podeEscrever()) return;
   const itens = [];
   let seq = 0, salvandoTudo = false, semLeitura = "", lendoAgora = 0, fechado = false;
@@ -2024,7 +2028,7 @@ function abrirLote(arquivos) {
     const bt = q("#lt-salvar");
     bt.disabled = !c.pronto || salvandoTudo;
     bt.textContent = c.pronto ? `Salvar ${plural(c.pronto, "pronto", "prontos")}` : "Salvar prontos";
-    m.title(itens.length ? `Enviar ${plural(itens.length, "comprovante", "comprovantes")}` : "Enviar vários comprovantes");
+    m.title(opts.titulo ? `${opts.titulo}${itens.length ? ` (${num(itens.length)})` : ""}` : itens.length ? `Enviar ${plural(itens.length, "comprovante", "comprovantes")}` : "Enviar vários comprovantes");
   };
   const atualizar = it => {
     if (fechado || !it.el) return;
@@ -2090,9 +2094,11 @@ function abrirLote(arquivos) {
       if (t === "empresa") tituloAuto(it);
       atualizar(it);
     }));
+    if (mantido(file)) { const bx = g(".lt-x"); bx.title = "Descartar"; bx.setAttribute("aria-label", "Descartar " + (file.name || "arquivo")); }
     g(".lt-x").addEventListener("click", () => {
       if (it.salvando) return;
       const i = itens.indexOf(it); if (i >= 0) itens.splice(i, 1);
+      if (!it.salvo) avisar("aoDescartar", it.file);
       el.remove(); if (it.url) URL.revokeObjectURL(it.url);
       resumo();
     });
@@ -2215,6 +2221,7 @@ function abrirLote(arquivos) {
       S.config = { ultimo: n };
       db.doc("config/contador").set({ ultimo: n }).catch(() => {});
       it.salvo = true; it.codigo = codigo; it.aviso = "";
+      avisar("aoSalvar", it.file);
       return true;
     } catch (e) {
       if (enviados) enviados.forEach(id => assets.delete(id).catch(() => {}));
@@ -2246,7 +2253,7 @@ function abrirLote(arquivos) {
   // ----- fechar, adicionar mais, arrastar para a janela -----
   const fechar = async () => {
     if (salvandoTudo) { toast("Aguarde terminar de salvar."); return; }
-    const pend = itens.filter(it => !it.salvo && !it.dup && !it.erro).length;
+    const pend = itens.filter(it => !it.salvo && !it.dup && !it.erro && !mantido(it.file)).length;
     if (pend) {
       const r = await confirmar({ title: "Fechar sem salvar?", ok: "Fechar mesmo assim", danger: true,
         html: `<p>${pend === 1 ? "1 comprovante ainda não foi salvo e vai sair da lista." : `${num(pend)} comprovantes ainda não foram salvos e vão sair da lista.`}</p>` });
@@ -2265,7 +2272,7 @@ function abrirLote(arquivos) {
   m.el.addEventListener("drop", e => { const fs = Array.from((e.dataTransfer && e.dataTransfer.files) || []); if (fs.length) { e.preventDefault(); e.stopPropagation(); adicionar(fs); } });
   const hook = () => itens.forEach(it => { if (!it.salvo && !it.salvando) { preencherSelects(it); atualizar(it); } });
   S.hooks.add(hook);
-  m.onClose = () => { fechado = true; S.hooks.delete(hook); itens.forEach(it => { if (it.url) URL.revokeObjectURL(it.url); }); itens.length = 0; };
+  m.onClose = () => { fechado = true; S.hooks.delete(hook); itens.forEach(it => { if (it.url) URL.revokeObjectURL(it.url); if (!it.salvo && (it.dup || it.erro)) avisar("aoDescartar", it.file); }); itens.length = 0; avisar("aoFechar"); };
 
   adicionar(arquivos);
 }
@@ -2907,7 +2914,7 @@ document.addEventListener("drop", e => {
   else if (fs[0]) abrirForm({ modo: "novo", arquivo: fs[0] });
 });
 
-window.__app = { modal, toast, confirmar, renderAll: () => renderAll(), novoComArquivo: f => abrirForm({ modo: "novo", arquivo: f }), lote: fs => abrirLote(fs), pronto: () => ["comprovantes", "empresas", "razoes", "bancos"].every(k => S.got[k]), iniciar: () => { rota(); renderAll(); conectar(); } };
+window.__app = { modal, toast, confirmar, renderAll: () => renderAll(), novoComArquivo: f => abrirForm({ modo: "novo", arquivo: f }), lote: (fs, o) => abrirLote(fs, o), pronto: () => ["comprovantes", "empresas", "razoes", "bancos"].every(k => S.got[k]), iniciar: () => { rota(); renderAll(); conectar(); } };
 })();
 </script>
 
@@ -2940,6 +2947,11 @@ input[type="email"], input[type="password"], input[type="url"] {
 .aj-link { font-family: var(--f-mono); font-size: 11.5px; word-break: break-all; background: var(--surface-2); border-radius: 8px; padding: 8px 10px; max-height: 76px; overflow: auto; user-select: all; }
 .side-ajustes { justify-content: flex-start; width: 100%; margin-bottom: 8px; }
 .top-acoes { display: flex; align-items: center; gap: 4px; }
+#wa-entrada:empty { display: none; }
+.wa-banner .ic { flex: none; color: var(--accent); width: 20px; height: 20px; }
+.wa-banner p b { color: var(--ink); }
+.aj-num { display: flex; gap: 8px; flex-wrap: wrap; }
+.aj-num input { flex: 1 1 200px; }
 </style>
 
 <div class="shell" id="shell" hidden>
@@ -2956,7 +2968,7 @@ input[type="email"], input[type="password"], input[type="url"] {
 (() => {
 "use strict";
 const CFG_KEY = "gc-config", IA_KEY = "gc-ia", TB = "documentos", BUCKET = "comprovantes";
-const SQL = "-- =====================================================================\n-- Gestor de Comprovantes — estrutura do banco no Supabase\n-- Cole este script inteiro no SQL Editor do Supabase e clique em Run.\n-- Pode rodar de novo sem problema: ele não apaga dados.\n-- =====================================================================\n\n-- 1) Tabela de registros.\n-- Cada linha guarda um registro do sistema como JSON:\n--   col = coleção (comprovantes, empresas, razoes, bancos, arquivos_soltos, config)\n--   id  = identificador do registro dentro da coleção\ncreate table if not exists public.documentos (\n  user_id       uuid        not null default auth.uid() references auth.users (id) on delete cascade,\n  col           text        not null,\n  id            text        not null,\n  data          jsonb       not null,\n  atualizado_em timestamptz not null default now(),\n  primary key (user_id, col, id)\n);\n\ncreate index if not exists documentos_col_idx on public.documentos (user_id, col);\n\n-- 2) Segurança: cada usuário só enxerga e altera os próprios registros.\nalter table public.documentos enable row level security;\n\ndrop policy if exists \"documentos: dono lê\"     on public.documentos;\ndrop policy if exists \"documentos: dono cria\"   on public.documentos;\ndrop policy if exists \"documentos: dono altera\" on public.documentos;\ndrop policy if exists \"documentos: dono apaga\"  on public.documentos;\n\ncreate policy \"documentos: dono lê\"     on public.documentos for select to authenticated using (user_id = auth.uid());\ncreate policy \"documentos: dono cria\"   on public.documentos for insert to authenticated with check (user_id = auth.uid());\ncreate policy \"documentos: dono altera\" on public.documentos for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());\ncreate policy \"documentos: dono apaga\"  on public.documentos for delete to authenticated using (user_id = auth.uid());\n\ngrant select, insert, update, delete on public.documentos to authenticated;\n\n-- 3) Atualização em tempo real entre aparelhos (PC e celular).\ndo $$\nbegin\n  if not exists (\n    select 1 from pg_publication_tables\n    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'documentos'\n  ) then\n    alter publication supabase_realtime add table public.documentos;\n  end if;\nend $$;\n\n-- 4) Pasta privada para as imagens (JPG) e PDFs dos comprovantes. Limite de 20 MB por arquivo.\ninsert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)\nvalues ('comprovantes', 'comprovantes', false, 20971520, array['image/jpeg', 'application/pdf'])\non conflict (id) do update\n  set public = false,\n      file_size_limit = excluded.file_size_limit,\n      allowed_mime_types = excluded.allowed_mime_types;\n\n-- Cada usuário só acessa a própria pasta dentro do bucket (a pasta tem o id do usuário).\ndrop policy if exists \"comprovantes: dono lê\"     on storage.objects;\ndrop policy if exists \"comprovantes: dono envia\"  on storage.objects;\ndrop policy if exists \"comprovantes: dono altera\" on storage.objects;\ndrop policy if exists \"comprovantes: dono apaga\"  on storage.objects;\n\ncreate policy \"comprovantes: dono lê\" on storage.objects for select to authenticated\n  using (bucket_id = 'comprovantes' and (storage.foldername(name))[1] = auth.uid()::text);\ncreate policy \"comprovantes: dono envia\" on storage.objects for insert to authenticated\n  with check (bucket_id = 'comprovantes' and (storage.foldername(name))[1] = auth.uid()::text);\ncreate policy \"comprovantes: dono altera\" on storage.objects for update to authenticated\n  using (bucket_id = 'comprovantes' and (storage.foldername(name))[1] = auth.uid()::text)\n  with check (bucket_id = 'comprovantes' and (storage.foldername(name))[1] = auth.uid()::text);\ncreate policy \"comprovantes: dono apaga\" on storage.objects for delete to authenticated\n  using (bucket_id = 'comprovantes' and (storage.foldername(name))[1] = auth.uid()::text);\n";
+const SQL = "-- =====================================================================\n-- Gestor de Comprovantes — estrutura do banco no Supabase\n-- Cole este script inteiro no SQL Editor do Supabase e clique em Run.\n-- Pode rodar de novo sem problema: ele não apaga dados.\n-- =====================================================================\n\n-- 1) Tabela de registros.\n-- Cada linha guarda um registro do sistema como JSON:\n--   col = coleção (comprovantes, empresas, razoes, bancos, arquivos_soltos, config, entrada)\n--   id  = identificador do registro dentro da coleção\ncreate table if not exists public.documentos (\n  user_id       uuid        not null default auth.uid() references auth.users (id) on delete cascade,\n  col           text        not null,\n  id            text        not null,\n  data          jsonb       not null,\n  atualizado_em timestamptz not null default now(),\n  primary key (user_id, col, id)\n);\n\ncreate index if not exists documentos_col_idx on public.documentos (user_id, col);\n\n-- 2) Segurança: cada usuário só enxerga e altera os próprios registros.\nalter table public.documentos enable row level security;\n\ndrop policy if exists \"documentos: dono lê\"     on public.documentos;\ndrop policy if exists \"documentos: dono cria\"   on public.documentos;\ndrop policy if exists \"documentos: dono altera\" on public.documentos;\ndrop policy if exists \"documentos: dono apaga\"  on public.documentos;\n\ncreate policy \"documentos: dono lê\"     on public.documentos for select to authenticated using (user_id = auth.uid());\ncreate policy \"documentos: dono cria\"   on public.documentos for insert to authenticated with check (user_id = auth.uid());\ncreate policy \"documentos: dono altera\" on public.documentos for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());\ncreate policy \"documentos: dono apaga\"  on public.documentos for delete to authenticated using (user_id = auth.uid());\n\ngrant select, insert, update, delete on public.documentos to authenticated;\n\n-- 3) Atualização em tempo real entre aparelhos (PC e celular).\ndo $$\nbegin\n  if not exists (\n    select 1 from pg_publication_tables\n    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'documentos'\n  ) then\n    alter publication supabase_realtime add table public.documentos;\n  end if;\nend $$;\n\n-- 4) Pasta privada para as imagens e PDFs dos comprovantes. Limite de 20 MB por arquivo.\n--    PNG e WEBP entram só na caixa \"Recebidos pelo WhatsApp\"; ao salvar, o app converte para JPG.\ninsert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)\nvalues ('comprovantes', 'comprovantes', false, 20971520, array['image/jpeg', 'application/pdf', 'image/png', 'image/webp'])\non conflict (id) do update\n  set public = false,\n      file_size_limit = excluded.file_size_limit,\n      allowed_mime_types = excluded.allowed_mime_types;\n\n-- Cada usuário só acessa a própria pasta dentro do bucket (a pasta tem o id do usuário).\ndrop policy if exists \"comprovantes: dono lê\"     on storage.objects;\ndrop policy if exists \"comprovantes: dono envia\"  on storage.objects;\ndrop policy if exists \"comprovantes: dono altera\" on storage.objects;\ndrop policy if exists \"comprovantes: dono apaga\"  on storage.objects;\n\ncreate policy \"comprovantes: dono lê\" on storage.objects for select to authenticated\n  using (bucket_id = 'comprovantes' and (storage.foldername(name))[1] = auth.uid()::text);\ncreate policy \"comprovantes: dono envia\" on storage.objects for insert to authenticated\n  with check (bucket_id = 'comprovantes' and (storage.foldername(name))[1] = auth.uid()::text);\ncreate policy \"comprovantes: dono altera\" on storage.objects for update to authenticated\n  using (bucket_id = 'comprovantes' and (storage.foldername(name))[1] = auth.uid()::text)\n  with check (bucket_id = 'comprovantes' and (storage.foldername(name))[1] = auth.uid()::text);\ncreate policy \"comprovantes: dono apaga\" on storage.objects for delete to authenticated\n  using (bucket_id = 'comprovantes' and (storage.foldername(name))[1] = auth.uid()::text);\n";
 const MODELOS = [
   ["claude-haiku-5-5", "Claude Haiku 5.5 — mais rápido e barato (recomendado)"],
   ["claude-sonnet-5-5", "Claude Sonnet 5.5 — mais preciso"]
@@ -3094,7 +3106,7 @@ function entrou(sessao) {
   window.__urlAsset = adapt.urlAsset;
   window.__blobAsset = adapt.blobAsset;
   shell.hidden = true;
-  if (!iniciado) { iniciado = true; window.__app.iniciar(); }
+  if (!iniciado) { iniciado = true; window.__app.iniciar(); iniciarEntrada(); }
   receberCompartilhado();
 }
 
@@ -3441,6 +3453,16 @@ function abrirAjustes() {
       ${!instalado && eventoInstalar ? `<div class="aj-row"><button class="btn primary sm" type="button" id="aj-instalar">Instalar app neste aparelho</button></div>` : ""}
     </section>
     <section class="aj-sec">
+      <h3>WhatsApp</h3>
+      <p>Encaminhe comprovantes para o número do app no WhatsApp e eles aparecem em <b>Recebidos pelo WhatsApp</b>, na tela de Comprovantes. Só os números abaixo podem mandar. A configuração na Meta e no Supabase está no LEIA-ME (passo 9).</p>
+      <div class="field"><label for="aj-wa-num">Seu número de WhatsApp, com DDD (para mais de um, separe por vírgula)</label>
+        <div class="aj-num"><input type="text" id="aj-wa-num" inputmode="tel" placeholder="(99) 98123-4567" autocomplete="tel" spellcheck="false"><button class="btn primary sm" type="button" id="aj-wa-salvar">Salvar</button></div></div>
+      <span class="aj-status" id="aj-wa-st">Carregando…</span>
+      <p>Endereço do webhook (Callback URL) para colar na Meta:</p>
+      <div class="aj-link" id="aj-wa-url">${esc(String(cfg.url || "").replace(/\/+$/, "") + "/functions/v1/whatsapp")}</div>
+      <div class="aj-row"><button class="btn sm" type="button" id="aj-wa-copiar">Copiar endereço</button><span class="aj-status" id="aj-wa-cp"></span></div>
+    </section>
+    <section class="aj-sec">
       <h3>Backup</h3>
       <p>O backup é um arquivo com todos os registros e imagens. Importar um backup junta os registros dele aos que já existem.</p>
       <div class="aj-row">
@@ -3474,6 +3496,25 @@ function abrirAjustes() {
     const t = q("#aj-link-txt"); t.textContent = link; t.hidden = false;
     q("#aj-link-st").textContent = (await copiar(link)) ? "Link copiado. Envie para o outro aparelho." : "Selecione e copie o link abaixo.";
   });
+  const waIn = q("#aj-wa-num"), waSt = q("#aj-wa-st");
+  sb.from(TB).select("data").eq("col", "config").eq("id", "whatsapp").limit(1).then(({ data, error }) => {
+    if (error) { waSt.className = "aj-status err"; waSt.textContent = "Não foi possível carregar os números."; return; }
+    const ns = (data && data[0] && data[0].data && data[0].data.numeros) || [];
+    if (!waIn.value) waIn.value = ns.map(mostrarNumero).join(", ");
+    waSt.className = "aj-status"; waSt.textContent = ns.length ? "" : "Nenhum número autorizado ainda.";
+  });
+  q("#aj-wa-salvar").addEventListener("click", async () => {
+    const partes = waIn.value.split(/[,;\n]+/).map(t => t.trim()).filter(Boolean);
+    const ns = [...new Set(partes.map(normalizarNumero))];
+    if (partes.length && ns.some(n => !n)) { waSt.className = "aj-status err"; waSt.textContent = "Confira o número: use o DDD e o número, por exemplo (99) 98123-4567."; return; }
+    waSt.className = "aj-status"; waSt.textContent = "Salvando…";
+    try {
+      await adapt.db.doc("config/whatsapp").set({ numeros: ns, atualizadoEm: new Date().toISOString() });
+      waIn.value = ns.map(mostrarNumero).join(", ");
+      waSt.className = "aj-status ok"; waSt.textContent = ns.length ? (ns.length === 1 ? "Número autorizado." : "Números autorizados.") : "Nenhum número autorizado: o WhatsApp não vai aceitar comprovantes.";
+    } catch (e) { waSt.className = "aj-status err"; waSt.textContent = "Não foi possível salvar. Confira a internet e tente de novo."; }
+  });
+  q("#aj-wa-copiar").addEventListener("click", async () => { q("#aj-wa-cp").textContent = (await copiar(q("#aj-wa-url").textContent)) ? "Copiado." : "Selecione e copie o endereço acima."; });
   const bi = q("#aj-instalar");
   if (bi) bi.addEventListener("click", async () => { try { eventoInstalar.prompt(); await eventoInstalar.userChoice; } catch (e) {} eventoInstalar = null; bi.hidden = true; });
   const st = q("#aj-bk-st");
@@ -3537,6 +3578,74 @@ async function receberCompartilhado() {
     if (arquivos.length > 1) window.__app.lote(arquivos); else window.__app.novoComArquivo(arquivos[0]);
   } catch (e) {}
 }
+
+// ---------- Recebidos pelo WhatsApp (caixa de entrada preenchida pela função "whatsapp" do Supabase) ----------
+let entrada = null, entradaAberta = false, novosEntrada = 0, tmrEntrada = 0;
+let pedirEntrada = new URLSearchParams(location.search).has("entrada");
+if (pedirEntrada) history.replaceState(null, "", location.pathname + location.hash);
+const esperarPronto = async () => { const t = Date.now(); while (!window.__app.pronto() && Date.now() - t < 8000) await new Promise(r => setTimeout(r, 200)); };
+function iniciarEntrada() {
+  adapt.db.collection("entrada").onSnapshot(snap => {
+    const antes = entrada ? entrada.length : null;
+    entrada = snap.docs.map(d => Object.assign({ id: d.id }, d.data())).filter(e => e && e.arquivo)
+      .sort((a, b) => String(a.recebidoEm || "").localeCompare(String(b.recebidoEm || "")));
+    if (antes !== null && entrada.length > antes && !entradaAberta) {
+      novosEntrada += entrada.length - antes;
+      clearTimeout(tmrEntrada);
+      tmrEntrada = setTimeout(() => { toast(novosEntrada === 1 ? "Chegou 1 comprovante pelo WhatsApp." : `Chegaram ${novosEntrada} comprovantes pelo WhatsApp.`); novosEntrada = 0; }, 800);
+    }
+    desenharEntrada();
+    if (pedirEntrada) { pedirEntrada = false; if (entrada.length) abrirEntrada(); else toast("Nenhum comprovante novo do WhatsApp."); }
+  });
+}
+function desenharEntrada() {
+  const el = document.getElementById("wa-entrada");
+  if (!el) return;
+  const n = entrada ? entrada.length : 0;
+  if (!n) { el.innerHTML = ""; return; }
+  el.innerHTML = `<div class="banner info wa-banner"><svg class="ic" aria-hidden="true"><use href="#i-chat"/></svg>
+    <p><b>${n === 1 ? "1 comprovante recebido" : n + " comprovantes recebidos"} pelo WhatsApp.</b> Revise e salve para ${n === 1 ? "ele entrar" : "eles entrarem"} na lista.</p>
+    <button class="btn primary sm" type="button" data-wa-abrir${entradaAberta ? " disabled" : ""}>Revisar e salvar</button></div>`;
+}
+async function descartarEntrada(item) {
+  try { await adapt.db.doc("entrada/" + item.id).delete(); } catch (e) { return; }
+  adapt.assets.delete(item.arquivo).catch(() => {});
+}
+async function abrirEntrada() {
+  if (entradaAberta || !entrada || !entrada.length) return;
+  entradaAberta = true; desenharEntrada();
+  const itens = entrada.slice(0, 40), mapa = new Map();
+  let falhas = 0;
+  toast(itens.length === 1 ? "Abrindo o comprovante recebido…" : `Abrindo ${itens.length} comprovantes recebidos…`);
+  await Promise.all(itens.map(async item => {
+    try {
+      const blob = await adapt.blobAsset(item.arquivo);
+      mapa.set(item, new File([blob], item.nome || "comprovante", { type: item.tipo || blob.type || "image/jpeg" }));
+    } catch (e) { falhas++; }
+  }));
+  const arquivos = itens.filter(i => mapa.has(i)).map(i => mapa.get(i));
+  const deArquivo = new Map(itens.filter(i => mapa.has(i)).map(i => [mapa.get(i), i]));
+  if (!arquivos.length) { entradaAberta = false; desenharEntrada(); toast("Não foi possível baixar os comprovantes recebidos. Confira a internet e tente de novo.", "err"); return; }
+  if (falhas) toast(`${falhas === 1 ? "1 comprovante não pôde ser baixado" : falhas + " comprovantes não puderam ser baixados"}; ${falhas === 1 ? "ele continua" : "eles continuam"} em Recebidos.`, "err");
+  await esperarPronto();
+  window.__app.lote(arquivos, {
+    titulo: "Recebidos pelo WhatsApp",
+    mantido: f => deArquivo.has(f),
+    aoSalvar: f => { const i = deArquivo.get(f); if (i) descartarEntrada(i); },
+    aoDescartar: f => { const i = deArquivo.get(f); if (i) descartarEntrada(i); },
+    aoFechar: () => { entradaAberta = false; desenharEntrada(); }
+  });
+}
+document.addEventListener("click", e => { if (e.target.closest("[data-wa-abrir]")) { e.preventDefault(); abrirEntrada(); } });
+
+// Números de WhatsApp autorizados: guardados em config/whatsapp para a função saber de quem é cada mensagem.
+function normalizarNumero(t) {
+  let d = String(t || "").replace(/\D/g, "");
+  if (d.startsWith("00")) d = d.slice(2);
+  if (d.length === 10 || d.length === 11) d = "55" + d;   // DDD + número, sem o código do país
+  return d.length >= 12 && d.length <= 15 ? d : "";
+}
+const mostrarNumero = d => { const m = String(d).match(/^55(\d{2})(\d{4,5})(\d{4})$/); return m ? `(${m[1]}) ${m[2]}-${m[3]}` : "+" + d; };
 
 iniciar();
 })();
