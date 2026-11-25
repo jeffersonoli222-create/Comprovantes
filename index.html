@@ -18,6 +18,265 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap">
 <style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui,-apple-system,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>/* Leitura local de comprovantes em PDF (sem chave da API).
+   PDFs gerados pelo app do banco já trazem o texto dentro. Aqui o texto é organizado em linhas
+   e lido por regras: data do pagamento, vencimento, valor, beneficiário, pagador (razão) e banco.
+   Devolve o mesmo formato da leitura feita pelo Claude, para o app aplicar do mesmo jeito. */
+(function (raiz) {
+  "use strict";
+  const semAcento = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const baixo = s => semAcento(s).toLowerCase().replace(/\s+/g, " ").trim();
+  const MESES = { jan: 1, fev: 2, mar: 3, abr: 4, mai: 5, jun: 6, jul: 7, ago: 8, set: 9, out: 10, nov: 11, dez: 12 };
+
+  /* ---------- texto do PDF em linhas (itens do pdf.js, página a página) ---------- */
+  function linhasDoPdf(paginas) {
+    const saida = [];
+    for (const itens of paginas || []) {
+      const pecas = [];
+      for (const it of itens || []) {
+        if (!it || typeof it.str !== "string" || !it.str.trim() || !it.transform) continue;
+        const h = Math.abs(it.height || it.transform[3] || it.transform[0] || 10) || 10;
+        pecas.push({ s: it.str, x: it.transform[4], y: it.transform[5], w: it.width || it.str.length * h * 0.5, h });
+      }
+      pecas.sort((a, b) => b.y - a.y || a.x - b.x);
+      const linhas = [];
+      for (const p of pecas) {
+        const l = linhas.find(l => Math.abs(l.y - p.y) <= Math.max(2, Math.min(l.h, p.h) * 0.5));
+        if (l) { l.p.push(p); l.h = Math.max(l.h, p.h); } else linhas.push({ y: p.y, h: p.h, p: [p] });
+      }
+      linhas.sort((a, b) => b.y - a.y);
+      for (const l of linhas) {
+        l.p.sort((a, b) => a.x - b.x);
+        let t = "", fim = null;
+        for (const p of l.p) {
+          if (fim !== null) {
+            const gap = p.x - fim;
+            if (gap > l.h * 1.6) t += " | ";
+            else if (gap > l.h * 0.12 && !/\s$/.test(t) && !/^\s/.test(p.s)) t += " ";
+          }
+          t += p.s; fim = p.x + p.w;
+        }
+        t = t.replace(/\s+/g, " ").replace(/(\s*\|\s*)+/g, " | ").replace(/^\s*\|\s*|\s*\|\s*$/g, "").trim();
+        if (t) saida.push(t);
+      }
+    }
+    return saida;
+  }
+
+  /* ---------- datas e valores ---------- */
+  function isoDe(a, m, d) {
+    a = Number(a); m = Number(m); d = Number(d);
+    if (a < 100) a += 2000;
+    if (!(a >= 1990 && a <= 2100 && m >= 1 && m <= 12 && d >= 1 && d <= 31)) return null;
+    const dt = new Date(Date.UTC(a, m - 1, d));
+    if (dt.getUTCMonth() !== m - 1) return null;
+    return `${a}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  }
+  function acharData(texto) {
+    const t = baixo(texto), achados = [];
+    let r;
+    const num = /(?:^|[^\d])(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4}|\d{2})(?!\d)/g;
+    while ((r = num.exec(t))) { const iso = isoDe(r[3], r[2], r[1]); if (iso) achados.push({ i: r.index, iso }); }
+    const ext = /(?:^|[^\d])(\d{1,2})(?:\s*de)?\s*[\/\-\s]\s*(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)[a-z]*\.?(?:\s*de)?\s*[\/\-\s]\s*(\d{4})(?!\d)/g;
+    while ((r = ext.exec(t))) { const iso = isoDe(r[3], MESES[r[2]], r[1]); if (iso) achados.push({ i: r.index, iso }); }
+    const iso = /(?:^|[^\d])(\d{4})-(\d{2})-(\d{2})(?!\d)/g;
+    while ((r = iso.exec(t))) { const v = isoDe(r[1], r[2], r[3]); if (v) achados.push({ i: r.index, iso: v }); }
+    achados.sort((a, b) => a.i - b.i);
+    return achados.length ? achados[0].iso : null;
+  }
+  // Valor em centavos. Com exigirRS, só aceita números precedidos de "R$".
+  function acharValor(texto, exigirRS) {
+    const t = String(texto || "");
+    let r = /R\$\s*-?\s*(\d{1,3}(?:\.\d{3})+|\d+),(\d{2})(?!\d)/.exec(t);
+    if (!r && !exigirRS) r = /(?:^|[^\d.,])(\d{1,3}(?:\.\d{3})+|\d+),(\d{2})(?![\d,])/.exec(t);
+    if (!r) return null;
+    const c = Number(r[1].replace(/\./g, "")) * 100 + Number(r[2]);
+    return c > 0 ? c : null;
+  }
+
+  /* ---------- rótulos, seções e nomes ---------- */
+  // Divide "Rótulo: valor" ou "Rótulo | valor".
+  function partes(linha) {
+    const m = /^([^:|]{1,60}?)\s*(?::|\|)\s*(.*)$/.exec(linha);
+    return m ? { rot: baixo(m[1]), resto: m[2].trim() } : { rot: baixo(linha), resto: "" };
+  }
+  const PRE = "(?:dados\\s+(?:do|da|de|dos)\\s+)?";
+  const SEC = {
+    final: new RegExp(`^${PRE}beneficiario\\s+final$`),
+    benef: new RegExp(`^${PRE}(?:beneficiario(?:\\s+original)?|favorecido|recebedor|destinatario|cedente|destino|quem\\s+recebeu|conta\\s+(?:de\\s+)?destino|para|pago\\s+a|recebido\\s+por)$`),
+    pag: new RegExp(`^${PRE}(?:pagador|pagante|sacado|origem|quem\\s+pagou|conta\\s+(?:de\\s+)?origem|de|pago\\s+por|debitado\\s+de)$`),
+    outro: new RegExp(`^${PRE}(?:boleto|pagamento|documento|agendamento|transacao|transferencia|informacoes(?:\\s+adicionais)?|detalhes(?:\\s+do\\s+pagamento)?|autenticacao(?:\\s+(?:bancaria|mecanica))?|codigo\\s+de\\s+barras|linha\\s+digitavel|ouvidoria|sac|central\\s+de\\s+atendimento|valores|encargos)$`)
+  };
+  const ROT_NOME = /^(?:nome(?:\s+(?:completo|fantasia|do\s+(?:beneficiario|favorecido|pagador|recebedor|titular)))?|razao\s+social|titular|empresa)$/;
+  const NAO_NOME = /\b(cpf|cnpj|instituicao|banco|agencia|conta|chave|tipo|pix|documento|valor|data|vencimento|codigo|autenticacao|id\b|identificador|transacao|comprovante|pagamento|boleto|ispb|saldo|tarifa|horario|hora)\b/;
+  const RE_DOC = /(\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2})/;
+
+  function limparNome(s) {
+    let n = String(s || "")
+      .replace(/\s*\|\s*.*$/, "")
+      .replace(/\b(cnpj|cpf|cpf\/cnpj|ag[eê]ncia|conta|institui[cç][aã]o)\b.*$/i, "")
+      .replace(/\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}/g, "")
+      .replace(/[*•·]+/g, " ").replace(/\s+/g, " ").replace(/^[\s\-–:.,]+|[\s\-–:,]+$/g, "").trim();
+    if (n.length > 80) n = n.slice(0, 80).trim();
+    const letras = (n.match(/[A-Za-zÀ-ÿ]/g) || []).length;
+    return letras >= 3 && letras >= n.replace(/\s/g, "").length * 0.6 ? n : "";
+  }
+  function pareceNome(linha) {
+    const p = partes(linha);
+    if (p.resto && NAO_NOME.test(p.rot)) return "";
+    if (NAO_NOME.test(baixo(linha)) && !p.resto) return "";
+    return limparNome(p.resto && !NAO_NOME.test(p.rot) && ROT_NOME.test(p.rot) ? p.resto : linha);
+  }
+
+  function lerTextoComprovante(linhasEntrada, nomeArquivo) {
+    const L = (linhasEntrada || []).map(t => String(t || "").replace(/\s+/g, " ").trim()).filter(Boolean)
+      .map(t => ({ t, b: baixo(t), p: partes(t) }));
+    const vazio = { legivel: false };
+    if (L.length < 2 || !L.some(l => /\d/.test(l.t))) return vazio;
+
+    // seção de cada linha
+    let sec = null;
+    for (const l of L) {
+      const r = l.p.rot, tipo = SEC.final.test(r) ? "final" : SEC.benef.test(r) ? "benef" : SEC.pag.test(r) ? "pag" : SEC.outro.test(r) ? "outro" : null;
+      if (tipo) { sec = tipo; l.cab = tipo; }
+      l.sec = sec;
+    }
+    const n = L.length;
+
+    // valor após um rótulo: na mesma linha ou nas duas seguintes
+    const depoisDe = (re, ler, exigir) => {
+      for (let i = 0; i < n; i++) {
+        if (!re.test(L[i].b)) continue;
+        if (exigir && !exigir(L[i])) continue;
+        const v1 = ler(L[i].p.resto || L[i].t.slice(L[i].b.search(re))); if (v1 != null) return v1;
+        for (let k = 1; k <= 2 && i + k < n; k++) {
+          const v = ler(L[i + k].t); if (v != null) return v;
+          if (L[i + k].cab) break;
+        }
+      }
+      return null;
+    };
+
+    // ---- valor ----
+    const valorRe = [
+      /\bvalor\s+(?:total\s+)?pago\b|\bvalor\s+do\s+pagamento\b|\bvalor\s+da\s+transferencia\b|\bvalor\s+do\s+pix\b|\bvalor\s+(?:enviado|transferido|debitado)\b|\btotal\s+pago\b|\bvalor\s+total\b|\bvalor\s+cobrado\b/,
+      /^valor(?!\s+(?:do\s+|da\s+)?(?:documento|boleto|nominal|original|desconto|juros|multa|tarifa|acrescimo|abatimento|deducao|mora))\b/,
+      /\bvalor\s+(?:do\s+)?(?:documento|boleto|nominal|original)\b/
+    ];
+    let valor = null;
+    for (const re of valorRe) { valor = depoisDe(re, t => acharValor(t, false)); if (valor != null) break; }
+    if (valor == null) {
+      for (const l of L) {
+        if (/juros|multa|desconto|tarifa|limite|saldo|abatimento|encargo/.test(l.b)) continue;
+        const v = acharValor(l.t, true); if (v != null) { valor = v; break; }
+      }
+    }
+
+    // ---- datas ----
+    const vencimento = depoisDe(/\bvencimento\b/, acharData);
+    const dataRe = [
+      /\bdata\s+(?:do\s+|de\s+|da\s+)?(?:pagamento|debito|transacao|operacao|efetivacao|transferencia|realizacao|liquidacao)\b|\bpago\s+em\b|\brealizad[oa]\s+em\b|\befetuad[oa]\s+em\b|\bdebitado\s+em\b|\bdata\s*(?:e|\/)\s*hora\b/,
+      /^data\b(?!.*(?:vencimento|emissao|documento|processamento|agendamento|nascimento|validade))/
+    ];
+    let data = null;
+    for (const re of dataRe) { data = depoisDe(re, acharData); if (data) break; }
+    if (!data) {
+      for (const l of L) {
+        if (/vencimento|emissao|documento|processamento|nascimento|validade|agendad/.test(l.b)) continue;
+        const d = acharData(l.t); if (d) { data = d; break; }
+      }
+    }
+    if (!data && nomeArquivo) data = acharData(String(nomeArquivo).replace(/[_]/g, " "));
+
+    // ---- nomes por seção ----
+    const nomeDaSecao = tipo => {
+      for (let i = 0; i < n; i++) {
+        if (L[i].cab !== tipo) continue;
+        if (L[i].p.resto) { const nm = limparNome(L[i].p.resto); if (nm && !NAO_NOME.test(baixo(nm))) return { nome: nm, i }; }
+        for (let k = 1; k <= 8 && i + k < n && L[i + k].sec === tipo && !L[i + k].cab; k++) {
+          const l = L[i + k];
+          if (ROT_NOME.test(l.p.rot)) {
+            const nm = limparNome(l.p.resto || (L[i + k + 1] ? L[i + k + 1].t : "")); if (nm) return { nome: nm, i };
+          }
+        }
+        for (let k = 1; k <= 8 && i + k < n && L[i + k].sec === tipo && !L[i + k].cab; k++) {
+          const nm = pareceNome(L[i + k].t); if (nm) return { nome: nm, i };
+        }
+      }
+      return null;
+    };
+    const docDaSecao = tipo => {
+      for (const l of L) {
+        if (l.sec !== tipo) continue;
+        const r = RE_DOC.exec(l.t); if (r) return r[1];
+      }
+      return null;
+    };
+    // "Beneficiário: NOME" sem seção clara (rótulo e valor na mesma linha em qualquer lugar)
+    const nomePorRotulo = re => {
+      for (const l of L) if (re.test(l.p.rot) && l.p.resto) { const nm = limparNome(l.p.resto); if (nm) return nm; }
+      return null;
+    };
+    let empresaNome = null, empresaDoc = null;
+    const fin = nomeDaSecao("final"), ben = nomeDaSecao("benef");
+    if (fin) { empresaNome = fin.nome; empresaDoc = docDaSecao("final"); }
+    else if (ben) { empresaNome = ben.nome; empresaDoc = docDaSecao("benef"); }
+    else empresaNome = nomePorRotulo(/^(?:nome\s+do\s+)?(?:beneficiario|favorecido|recebedor|destinatario)/);
+    if (empresaNome && !empresaDoc) empresaDoc = docDaSecao(fin ? "final" : "benef");
+    const pg = nomeDaSecao("pag");
+    const razaoNome = pg ? pg.nome : nomePorRotulo(/^(?:nome\s+do\s+)?(?:pagador|pagante)/);
+    const razaoDoc = razaoNome ? docDaSecao("pag") : null;
+
+    // ---- banco que emitiu o comprovante ----
+    const BANCOS = [
+      ["Banco Inter", "077", /\bbanco\s+inter\b|\bbco\s+inter\b|\binter\s*&\s*co\b|\binter\s+s\.?\s?a\b|\binter\s+dtvm\b/],
+      ["PagBank", "290", /pagbank|pagseguro|pag\s+seguro/],
+      ["Stone", "197", /\bstone\b/],
+      ["Nubank", "260", /nubank|\bnu\s+pagamentos\b|\bnu\s+financeira\b|\bnu\s+invest/],
+      ["Mercado Pago", "323", /mercado\s*pago/],
+      ["Itaú", "341", /\bitau\b/],
+      ["Bradesco", "237", /bradesco/],
+      ["Banco do Brasil", "001", /banco\s+do\s+brasil|\bbco\s+do\s+brasil\b/],
+      ["Caixa Econômica Federal", "104", /caixa\s+economica/],
+      ["Santander", "033", /santander/],
+      ["C6 Bank", "336", /\bc6\s*bank\b|\bbanco\s+c6\b/],
+      ["PicPay", "380", /picpay/],
+      ["Sicoob", "756", /sicoob/],
+      ["Sicredi", "748", /sicredi/],
+      ["BTG Pactual", "208", /\bbtg\b/],
+      ["Banco Pan", "623", /\bbanco\s+pan\b/],
+      ["Cora", "403", /\bcora\s+(?:scd|sociedade)|\bcora\.com/],
+      ["InfinitePay", "542", /infinitepay|cloudwalk/]
+    ];
+    const pontos = new Map();
+    L.forEach((l, i) => {
+      if (l.sec === "benef" || l.sec === "final") return;
+      if (/emissor|emissora|cobrador|do\s+boleto|recebedora|do\s+favorecido|de\s+destino/.test(l.b)) return;
+      const peso = l.sec === "pag" ? 6 : i < 4 ? 4 : (i >= n - 6 || /ouvidoria|\bsac\b|atendimento|instituicao\s+de\s+pagamento|s\.?\s?a\b/.test(l.b)) ? 2 : 1;
+      for (const [nome, cod, re] of BANCOS) if (re.test(l.b)) pontos.set(nome, (pontos.get(nome) || 0) + peso);
+    });
+    let banco = null, melhor = 0;
+    for (const [nome, cod] of BANCOS) { const p = pontos.get(nome) || 0; if (p > melhor) { melhor = p; banco = { nome, codigo: cod }; } }
+
+    const legivel = valor != null || !!data || !!empresaNome;
+    if (!legivel) return vazio;
+    return {
+      legivel: true,
+      origem: "texto",
+      data: data || null,
+      vencimento: vencimento || null,
+      valor: valor != null ? valor / 100 : null,
+      empresa: empresaNome ? { id: null, nome: empresaNome, cnpj: empresaDoc && empresaDoc.replace(/\D/g, "").length === 14 ? empresaDoc : null } : null,
+      razao: razaoNome ? { id: null, nome: razaoNome, cnpj: razaoDoc && razaoDoc.replace(/\D/g, "").length === 14 ? razaoDoc : null } : null,
+      banco: banco ? { id: null, nome: banco.nome, codigo: banco.codigo } : null
+    };
+  }
+
+  const api = { linhasDoPdf, lerTextoComprovante, acharData, acharValor };
+  if (typeof module === "object" && module.exports) module.exports = api;
+  else Object.assign(raiz, api);
+})(typeof window !== "undefined" ? window : globalThis);
+</script>
 </head>
 <body>
 <style>
@@ -1388,7 +1647,7 @@ async function pdfParaJpg(file) {
   const lib = await carregarPdfJs();
   const doc = await lib.getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false }).promise;
   try {
-    const total = doc.numPages, n = Math.min(total, 3), paginas = [];
+    const total = doc.numPages, n = Math.min(total, 3), paginas = [], textos = [];
     for (let i = 1; i <= n; i++) {
       const page = await doc.getPage(i);
       const base = page.getViewport({ scale: 1 });
@@ -1399,6 +1658,7 @@ async function pdfParaJpg(file) {
       ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
       await page.render({ canvasContext: ctx, canvas: c, viewport: vp }).promise;
       paginas.push(c);
+      try { textos.push((await page.getTextContent()).items); } catch (e) {}
     }
     const gap = 16, W = Math.max(...paginas.map(c => c.width)), H = paginas.reduce((t, c) => t + c.height, 0) + gap * (paginas.length - 1);
     const out = document.createElement("canvas"); out.width = W; out.height = H;
@@ -1407,7 +1667,9 @@ async function pdfParaJpg(file) {
     const jpg = await canvasJpg(out, 0.86);
     const imgs = [];
     for (const c of paginas.slice(0, 2)) imgs.push(await canvasJpg(c, 0.85));
-    return { jpg, paginas: imgs, total };
+    let linhas = [];
+    try { linhas = window.linhasDoPdf ? window.linhasDoPdf(textos) : []; } catch (e) {}
+    return { jpg, paginas: imgs, total, linhas };
   } finally { try { doc.destroy(); } catch (e) {} }
 }
 async function prepararArquivo(file) {
@@ -1422,7 +1684,9 @@ async function prepararArquivo(file) {
   }
   try {
     const r = await pdfParaJpg(file);
-    return { tipo: "pdf", jpg: r.jpg, paginas: r.paginas, total: r.total, original: file, nomeJpg: (file.name || "comprovante.pdf").replace(/\.pdf$/i, "") + ".jpg" };
+    let local = null;
+    try { local = window.lerTextoComprovante ? window.lerTextoComprovante(r.linhas, file.name || "") : null; } catch (e) {}
+    return { tipo: "pdf", jpg: r.jpg, paginas: r.paginas, total: r.total, original: file, nomeJpg: (file.name || "comprovante.pdf").replace(/\.pdf$/i, "") + ".jpg", local, semTexto: !(r.linhas && r.linhas.length) };
   } catch (e) {
     const senha = e && /password/i.test(String(e.name || e.message || ""));
     return { erro: senha ? "Este PDF tem senha. Remova a senha ou envie uma foto ou print do comprovante em JPG." : "Não foi possível abrir este PDF. Envie uma foto ou print do comprovante em JPG." };
@@ -1764,7 +2028,7 @@ function abrirForm(opts) {
     }
     tituloAuto();
     if (st.vencimento && st.nomeAuto) lidos.push("vencimento no título");
-    let html = lidos.length ? `<p><b>Preenchido pelo comprovante:</b> ${juntar(lidos)}. Confira antes de salvar.` : `<p>Não consegui ler os dados deste comprovante.`;
+    let html = lidos.length ? `<p><b>Preenchido pelo comprovante${r && r.origem === "texto" ? " (texto do PDF)" : ""}:</b> ${juntar(lidos)}. Confira antes de salvar.` : `<p>Não consegui ler os dados deste comprovante.`;
     if (novos.length) html += ` Cadastro novo para confirmar: ${juntar(novos)}.`;
     if (faltam.length) html += ` Preencha manualmente: ${juntar(faltam)}.`;
     html += `</p><button type="button" class="link" data-auto="de-novo">Ler de novo</button>`;
@@ -1776,6 +2040,7 @@ function abrirForm(opts) {
     const prep = st.prep;
     const leitorFn = await obterLeitor();
     if (st.prep !== prep) return;
+    if (!leitorFn && prep.local && prep.local.legivel) { aplicarLeitura(prep.local); return; }
     if (!leitorFn) {
       if (leituraBloqueada) caixa("warn", `<p>A leitura automática não está liberada nesta visualização. Preencha os campos manualmente.</p>`);
       else autoBox.hidden = true;
@@ -1797,6 +2062,7 @@ function abrirForm(opts) {
     } catch (e) {
       if (st.leitura !== ctl) return;
       const c = e && e.code;
+      if (c !== "cancelled" && prep.local && prep.local.legivel) { aplicarLeitura(prep.local); return; }
       const deNovo = `<button type="button" class="link" data-auto="de-novo">Tentar de novo</button>`;
       if (c === "cancelled") caixa("warn", `<p>Leitura interrompida. Preencha os campos manualmente.</p><button type="button" class="link" data-auto="de-novo">Ler de novo</button>`);
       else if (["not_granted", "sampling_disabled", "not_declared", "images_unavailable", "capability_disabled", "capability_removed"].includes(c)) {
@@ -2134,9 +2400,15 @@ function abrirLote(arquivos, opts = {}) {
     }
   };
   const lerItem = async it => {
-    if (semLeitura) { it.aviso = semLeitura; return; }
+    const peloTexto = msg => {
+      const lc = it.prep && it.prep.local;
+      if (lc && lc.legivel && !fechado && itens.includes(it)) { aplicar(it, lc); it.aviso = "Lido do texto do PDF; confira antes de salvar."; return; }
+      if (it.prep && it.prep.tipo === "pdf" && semLeitura) { it.aviso = it.prep.semTexto ? "Este PDF é uma imagem (sem texto): preencha os campos ou adicione a chave da API em Ajustes." : "Não encontrei os dados de um comprovante neste PDF; preencha os campos."; return; }
+      it.aviso = msg;
+    };
+    if (semLeitura) { peloTexto(semLeitura); return; }
     const leitorFn = await obterLeitor();
-    if (!leitorFn) { semLeitura = leituraBloqueada ? "A leitura automática não está disponível aqui; preencha os campos." : "A leitura automática está desligada; preencha os campos."; it.aviso = semLeitura; return; }
+    if (!leitorFn) { semLeitura = leituraBloqueada ? "A leitura automática não está disponível aqui; preencha os campos." : "A leitura automática está desligada; preencha os campos."; peloTexto(semLeitura); return; }
     const lim = leitorLimites.images;
     const maxImgs = Math.max(1, Math.min(lim.maxCount || 1, 2)), teto = Math.min(lim.maxInputBytes || 5e6, 5e6);
     const imgs = [];
@@ -2147,11 +2419,11 @@ function abrirLote(arquivos, opts = {}) {
       catch (e) {
         const c = e && e.code;
         if (c === "rate_limited" && tentativa < 2) { await sleep(4000 * (tentativa + 1)); continue; }
-        if (c === "sem_chave") semLeitura = "A leitura automática está desligada: adicione sua chave da API em Ajustes.";
+        if (c === "sem_chave") semLeitura = "Fotos e prints só são lidos com a chave da API (em Ajustes); PDFs do banco são lidos sem chave.";
         else if (c === "chave_invalida") semLeitura = "A chave da API foi recusada: confira em Ajustes.";
         else if (c === "sem_credito") semLeitura = "Sua conta da API está sem créditos.";
         else if (["not_granted", "sampling_disabled", "not_declared", "images_unavailable", "capability_disabled", "capability_removed"].includes(c)) { leituraBloqueada = true; semLeitura = "A leitura automática não está disponível aqui; preencha os campos."; }
-        it.aviso = semLeitura || "Não consegui ler este comprovante; preencha os campos.";
+        peloTexto(semLeitura || "Não consegui ler este comprovante; preencha os campos.");
         return;
       }
     }
