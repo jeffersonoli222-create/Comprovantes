@@ -1,6 +1,6 @@
 // Service worker do Gestor de Comprovantes: deixa o app instalável, abre mais rápido
 // e recebe comprovantes compartilhados de outros apps (Android).
-const VERSAO = "gc-v1";
+const VERSAO = "gc-v2";
 const APP = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
 const CDN = /^https:\/\/(cdn\.jsdelivr\.net|fonts\.googleapis\.com|fonts\.gstatic\.com)\//;
 
@@ -19,18 +19,21 @@ self.addEventListener("activate", e => {
 self.addEventListener("fetch", e => {
   const req = e.request, url = new URL(req.url);
 
-  // Arquivo compartilhado por outro app: guarda e abre o app com o formulário.
+  // Um ou vários arquivos compartilhados (WhatsApp, app do banco…): guarda e abre o app.
   if (req.method === "POST" && url.origin === location.origin && url.pathname.endsWith("/compartilhar")) {
     e.respondWith((async () => {
+      let n = 0;
       try {
         const fd = await req.formData();
-        const f = fd.get("arquivo");
-        if (f && typeof f !== "string") {
-          const c = await caches.open("compartilhado");
-          await c.put("arquivo-compartilhado", new Response(f, { headers: { "content-type": f.type || "application/octet-stream", "x-nome": encodeURIComponent(f.name || "comprovante") } }));
+        const arquivos = fd.getAll("arquivo").filter(f => f && typeof f !== "string").slice(0, 40);
+        const c = await caches.open("compartilhado");
+        for (const k of await c.keys()) await c.delete(k);
+        for (const f of arquivos) {
+          await c.put("arquivo-" + n, new Response(f, { headers: { "content-type": f.type || "application/octet-stream", "x-nome": encodeURIComponent(f.name || "comprovante-" + (n + 1)) } }));
+          n++;
         }
       } catch (err) {}
-      return Response.redirect(new URL("./?compartilhado=1", self.registration.scope).href, 303);
+      return Response.redirect(new URL("./?compartilhado=" + n, self.registration.scope).href, 303);
     })());
     return;
   }

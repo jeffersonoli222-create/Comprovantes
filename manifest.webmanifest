@@ -20,7 +20,7 @@
     "enctype": "multipart/form-data",
     "params": {
       "files": [
-        { "name": "arquivo", "accept": ["image/jpeg", ".jpg", ".jpeg", "application/pdf", ".pdf"] }
+        { "name": "arquivo", "accept": ["image/jpeg", "image/png", "image/webp", "application/pdf", ".jpg", ".jpeg", ".png", ".webp", ".pdf"] }
       ]
     }
   }

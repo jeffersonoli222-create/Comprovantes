@@ -278,6 +278,44 @@ input.auto-filled, select.auto-filled { background-color: var(--accent-soft); bo
 .drop-page > div { display: flex; flex-direction: column; align-items: center; gap: 10px; font-family: var(--f-display); font-size: 20px; font-weight: 600; color: var(--ink); text-align: center; padding: 16px; }
 .drop-page .ic { width: 40px; height: 40px; color: var(--accent); }
 .drop-page small { font-family: var(--f-body); font-size: 13px; font-weight: 500; color: var(--muted); }
+.lt { display: flex; flex-direction: column; gap: 12px; }
+.lt-resumo { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
+.lt-resumo b { color: var(--ink); margin-right: 4px; }
+.lt-resumo .lt-status { height: 22px; }
+.lt-list { display: flex; flex-direction: column; gap: 10px; }
+.lt-item { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.lt-item[data-estado="revisar"] { border-color: var(--warn-line); }
+.lt-item[data-estado="salvo"] { background: var(--surface-2); }
+.lt-item[data-estado="erro"], .lt-item[data-estado="duplicado"] { border-color: var(--danger); }
+.lt-thumb { width: 64px; height: 84px; }
+.lt-main { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.lt-top { display: flex; gap: 8px; align-items: center; }
+.lt-top .lt-titulo { flex: 1; min-width: 0; font-weight: 600; }
+.lt-campos { display: grid; grid-template-columns: 150px 140px repeat(3, minmax(0, 1fr)); gap: 8px; }
+.lt-f { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.lt-f > span:first-child { font-size: 11.5px; font-weight: 600; color: var(--muted); }
+.lt-f .money-wrap { display: block; }
+.lt-f input[type="text"], .lt-f input[type="date"], .lt-f select { height: 34px; font-size: 13.5px; }
+.lt-status { flex: none; display: inline-flex; gap: 6px; align-items: center; height: 24px; padding: 0 9px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--surface-2); color: var(--muted); white-space: nowrap; }
+.lt-status .spin { width: 12px; height: 12px; border-width: 2px; }
+.lt-status.pronto { background: var(--accent-soft); color: var(--accent); }
+.lt-status.revisar { background: var(--warn-soft); color: var(--warn); }
+.lt-status.erro, .lt-status.duplicado { background: var(--danger-soft); color: var(--danger); }
+.lt-status.salvo { background: var(--accent); color: var(--accent-ink); }
+.lt-msg { font-size: 12.5px; color: var(--muted); }
+.lt-msg:empty { display: none; }
+.lt-item[data-estado="revisar"] .lt-msg { color: var(--warn); }
+.lt-item[data-estado="erro"] .lt-msg, .lt-item[data-estado="duplicado"] .lt-msg { color: var(--danger); }
+.lt-vazio { padding: 32px 16px; text-align: center; color: var(--muted); border: 1.5px dashed var(--line-strong); border-radius: 12px; }
+.head-acoes { display: flex; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 1100px) { .lt-campos { grid-template-columns: repeat(2, minmax(0, 1fr)); } .lt-campos .lt-f:nth-child(3) { grid-column: 1 / -1; } }
+@media (max-width: 760px) {
+  .lt-item { grid-template-columns: 52px minmax(0, 1fr); padding: 10px; }
+  .lt-thumb { width: 52px; height: 68px; }
+  .lt-top { flex-wrap: wrap; }
+  .lt-top .lt-titulo { flex-basis: 100%; order: 3; }
+  .head-acoes .btn.primary.hide-m { display: none; }
+}
 .count .sum { margin-left: 8px; padding-left: 10px; border-left: 1px solid var(--line-strong); font-family: var(--f-mono); color: var(--ink); font-variant-numeric: tabular-nums; }
 .pill { display: inline-flex; align-items: center; height: 19px; padding: 0 7px; border-radius: 999px; font-family: var(--f-body); font-size: 11px; font-weight: 600; letter-spacing: .02em; }
 .pill.warn { background: var(--warn-soft); color: var(--warn); border: 1px solid var(--warn-line); }
@@ -610,7 +648,11 @@ table.list tbody tr:hover { background: var(--hover); }
           <h1 id="h-comp">Comprovantes</h1>
           <p class="sub" id="c-sub">Carregando registros…</p>
         </div>
-        <button class="btn primary hide-m" data-act="novo" type="button"><svg class="ic"><use href="#i-plus"/></svg>Novo comprovante</button>
+        <div class="head-acoes">
+          <button class="btn" data-act="lote" type="button"><svg class="ic"><use href="#i-upload"/></svg>Enviar vários</button>
+          <button class="btn primary hide-m" data-act="novo" type="button"><svg class="ic"><use href="#i-plus"/></svg>Novo comprovante</button>
+        </div>
+        <input type="file" id="lote-file" multiple hidden>
       </div>
       <div id="ex-banner"></div>
 
@@ -784,7 +826,7 @@ table.list tbody tr:hover { background: var(--hover); }
 
 <div id="modal-root"></div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
-<div class="drop-page" id="drop-page" hidden><div><svg class="ic" aria-hidden="true"><use href="#i-upload"/></svg>Solte o comprovante para cadastrar<small>Imagem JPG/JPEG ou PDF. Data, valor, beneficiário, razão e banco são preenchidos automaticamente.</small></div></div>
+<div class="drop-page" id="drop-page" hidden><div><svg class="ic" aria-hidden="true"><use href="#i-upload"/></svg>Solte os comprovantes para cadastrar<small>Um ou vários arquivos JPG, PNG ou PDF. Data, valor, beneficiário, razão e banco são preenchidos automaticamente.</small></div></div>
 
 <script>
 (() => {
@@ -1157,7 +1199,7 @@ function renderComprovantes() {
     : total ? `${plural(total, "comprovante cadastrado", "comprovantes cadastrados")} · ${plural(S.razoes.length, "razão", "razões")} · ${plural(S.bancos.length, "banco", "bancos")}`
     : "Nenhum comprovante cadastrado ainda.";
   // botões de cadastro
-  $$("[data-act='novo']").forEach(b => { b.hidden = S.canWrite === false; });
+  $$("[data-act='novo'], [data-act='lote']").forEach(b => { b.hidden = S.canWrite === false; });
   // banner de exemplos
   const nEx = S.comps.filter(c => c.exemplo).length;
   $("#ex-banner").innerHTML = nEx && S.canWrite !== false
@@ -1237,7 +1279,9 @@ document.addEventListener("click", e => {
   if (e.target.closest("#rm-ex")) { removerExemplos(); return; }
   const novo = e.target.closest("[data-act='novo']");
   if (novo) { abrirForm({ modo: "novo" }); return; }
+  if (e.target.closest("[data-act='lote']")) { if (!podeEscrever()) return; const i = $("#lote-file"); i.accept = ACEITA; i.value = ""; i.click(); return; }
 });
+$("#lote-file").addEventListener("change", e => { const fs = Array.from(e.target.files || []); e.target.value = ""; if (fs.length) abrirLote(fs); });
 $("#tbody").addEventListener("click", e => {
   const b = e.target.closest("[data-act]"); if (!b) return;
   const id = b.closest("tr")?.dataset.id; const c = S.comps.find(x => x.id === id); if (!c) return;
@@ -1302,20 +1346,23 @@ function podeEscrever() {
 }
 
 /* ================= Validação de imagem ================= */
+const ACEITA = ".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf";
 async function validarArquivo(file) {
   if (!file) return { erro: "Escolha o arquivo do comprovante." };
   const nome = file.name || "";
   const ehPdf = /\.pdf$/i.test(nome) || file.type === "application/pdf";
   const ehJpg = /\.jpe?g$/i.test(nome) || /^image\/p?jpe?g$/.test(file.type || "");
-  if (!ehPdf && !ehJpg) return { erro: "Formato não aceito. Envie uma imagem .jpg/.jpeg ou um arquivo .pdf." };
+  const ehOutraImg = !ehJpg && (/\.(png|webp)$/i.test(nome) || /^image\/(png|webp)$/.test(file.type || ""));
+  if (!ehPdf && !ehJpg && !ehOutraImg) return { erro: "Formato não aceito. Envie uma imagem (.jpg, .png) ou um arquivo .pdf." };
   if (!file.size) return { erro: "O arquivo está vazio." };
   if (file.size > MAX_BYTES) return { erro: `O arquivo tem ${fmtBytes(file.size)}. O limite é 20 MB.` };
   try {
     const b = new Uint8Array(await file.slice(0, 5).arrayBuffer());
     if (ehPdf) { if (String.fromCharCode(...b) !== "%PDF-") return { erro: "O arquivo tem extensão .pdf, mas o conteúdo não é um PDF válido." }; }
+    else if (ehOutraImg) { const png = b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47, webp = String.fromCharCode(b[0], b[1], b[2], b[3]) === "RIFF"; if (!png && !webp) return { erro: "O conteúdo do arquivo não é uma imagem válida." }; }
     else if (!(b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF)) return { erro: "O arquivo tem extensão .jpg, mas o conteúdo não é uma imagem JPEG válida." };
   } catch (e) {}
-  return { tipo: ehPdf ? "pdf" : "jpg" };
+  return { tipo: ehPdf ? "pdf" : ehOutraImg ? "img" : "jpg" };
 }
 const canvasJpg = (c, q) => new Promise((res, rej) => c.toBlob(b => b ? res(b) : rej(new Error("toBlob")), "image/jpeg", q));
 // pdf.js carregado só quando aparece um PDF. O módulo do worker é carregado antes para o pdf.js rodar na própria página.
@@ -1365,6 +1412,12 @@ async function prepararArquivo(file) {
   const v = await validarArquivo(file);
   if (v.erro) return v;
   if (v.tipo === "jpg") return { tipo: "jpg", jpg: file, paginas: [file], total: 1, original: file, nomeJpg: file.name || "comprovante.jpg" };
+  if (v.tipo === "img") {
+    // Print de tela (PNG) ou imagem WEBP: o sistema guarda tudo em JPG.
+    const jpg = await reduzirImagem(file, 3000);
+    if (!jpg || jpg.type !== "image/jpeg") return { erro: "Não foi possível abrir esta imagem. Envie em JPG ou PDF." };
+    return { tipo: "jpg", jpg, paginas: [jpg], total: 1, original: jpg, nomeJpg: (file.name || "comprovante").replace(/\.(png|webp)$/i, "") + ".jpg" };
+  }
   try {
     const r = await pdfParaJpg(file);
     return { tipo: "pdf", jpg: r.jpg, paginas: r.paginas, total: r.total, original: file, nomeJpg: (file.name || "comprovante.pdf").replace(/\.pdf$/i, "") + ".jpg" };
@@ -1524,12 +1577,12 @@ function abrirForm(opts) {
   const titulo = modo === "editar" ? `Editar ${comp.codigo}` : modo === "religar" ? "Criar registro com imagem guardada" : "Novo comprovante";
   const body = `<form class="form" id="fc" novalidate>
     <div class="field" id="fw-img">
-      <span class="lbl">Comprovante <em>· imagem JPG/JPEG ou PDF</em></span>
+      <span class="lbl">Comprovante <em>· imagem (JPG, PNG) ou PDF</em></span>
       ${imgFixa ? `<div class="pick"><img src="${esc(imgUrl(imgFixa))}" alt="Imagem do comprovante"><div class="pick-meta"><strong>${esc(imgFixa.nome || "imagem.jpg")}</strong><span>${fmtBytes(imgFixa.tamanho)}</span>${modo === "editar" ? `<button type="button" class="link" id="fc-trocar">Substituir imagem</button>` : `<span>Imagem guardada em Arquivos sem vínculo.</span>`}</div></div>`
       : `<label class="drop" id="drop">
-          <input type="file" id="fc-file" accept=".jpg,.jpeg,.pdf,image/jpeg,application/pdf" aria-label="Escolher o comprovante">
+          <input type="file" id="fc-file" accept="${ACEITA}"${modo === "novo" ? " multiple" : ""} aria-label="Escolher o comprovante">
           <span class="drop-ic">${ICON("upload")}</span>
-          <span><strong>Escolha o comprovante</strong> ou arraste o arquivo para cá<br><small>JPG, JPEG ou PDF, até 20 MB. Os campos são preenchidos automaticamente.</small></span>
+          <span><strong>Escolha um ou vários comprovantes</strong> ou arraste para cá<br><small>JPG, PNG ou PDF, até 20 MB cada. Os campos são preenchidos automaticamente.</small></span>
         </label>
         <div class="pick" id="pick" hidden><img id="pick-img" alt="Prévia do comprovante"><div class="pick-meta"><strong id="pick-name"></strong><span id="pick-size"></span><span id="pick-status"></span><button type="button" class="link" id="pick-change">Escolher outro arquivo</button></div></div>
         <div class="auto-box" id="auto-box" hidden></div>`}
@@ -1809,10 +1862,19 @@ function abrirForm(opts) {
       lerAutomatico();
     };
     escolherArquivo = escolher;
-    input.addEventListener("change", () => { if (input.files[0]) escolher(input.files[0]); });
+    input.addEventListener("change", () => {
+      const fs = Array.from(input.files || []);
+      if (fs.length > 1 && modo === "novo") { m.close(); abrirLote(fs); return; }
+      if (fs[0]) escolher(fs[0]);
+    });
     ["dragenter", "dragover"].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add("over"); }));
     ["dragleave", "drop"].forEach(t => drop.addEventListener(t, () => drop.classList.remove("over")));
-    drop.addEventListener("drop", e => { e.preventDefault(); const f = e.dataTransfer?.files?.[0]; if (f) escolher(f); });
+    drop.addEventListener("drop", e => {
+      e.preventDefault();
+      const fs = Array.from(e.dataTransfer?.files || []);
+      if (fs.length > 1 && modo === "novo") { m.close(); abrirLote(fs); return; }
+      if (fs[0]) escolher(fs[0]);
+    });
     q("#pick-change").addEventListener("click", () => { input.value = ""; input.click(); });
   }
 
@@ -1908,6 +1970,306 @@ function abrirForm(opts) {
   if (opts.arquivo && escolherArquivo) escolherArquivo(opts.arquivo);
 }
 
+/* ================= Vários comprovantes de uma vez ================= */
+const MAX_LOTE = 40;
+const juntarLista = a => a.length > 1 ? a.slice(0, -1).join(", ") + " e " + a[a.length - 1] : (a[0] || "");
+function abrirLote(arquivos) {
+  if (!podeEscrever()) return;
+  const itens = [];
+  let seq = 0, salvandoTudo = false, semLeitura = "", lendoAgora = 0, fechado = false;
+  const filaLeitura = [];
+  let cadeia = Promise.resolve();
+  const body = `<div class="lt">
+      <div class="lt-resumo" id="lt-resumo" aria-live="polite"></div>
+      <div class="lt-list" id="lt-list"></div>
+    </div>`;
+  const footer = `<span class="status" id="lt-status"></span>
+    <label class="btn" for="lt-mais" style="cursor:pointer">${ICON("plus")}Adicionar arquivos</label>
+    <input type="file" id="lt-mais" multiple accept="${ACEITA}" hidden>
+    <button class="btn" type="button" id="lt-fechar">Fechar</button>
+    <button class="btn primary" type="button" id="lt-salvar" disabled>Salvar prontos</button>`;
+  const m = modal({ title: "Enviar vários comprovantes", body, footer, size: "xl", dismiss: false });
+  m.el.dataset.busy = "1";   // Esc e clique fora não fecham sem perguntar
+  const q = s => m.el.querySelector(s);
+  const lista = q("#lt-list");
+
+  // ----- estado de cada arquivo -----
+  const faltando = it => {
+    const f = [];
+    if (!limparTitulo(it.inTitulo.value)) f.push("título");
+    const d = it.inData.value; if (!validIso(d) || d < "1990-01-01" || d > "2100-12-31") f.push("data");
+    const v = it.valorCtl.get(); if (!(v > 0 && v <= VALOR_MAX)) f.push("valor");
+    for (const [t, sel] of [["empresa", it.selE], ["razao", it.selR], ["banco", it.selB]]) {
+      const ok = sel.value === "__novo__" ? !!it.novo[t] : ENT[t].map().has(sel.value);
+      if (!ok) f.push(ENT[t].campo);
+    }
+    return f;
+  };
+  const estado = it => it.salvo ? "salvo" : it.salvando ? "salvando" : it.erro ? "erro" : it.dup ? "duplicado" : it.preparando ? "preparando" : it.lendo ? "lendo" : faltando(it).length ? "revisar" : "pronto";
+  const ROTULO = { salvo: "Salvo", salvando: "Salvando…", erro: "Não abriu", duplicado: "Já cadastrado", preparando: "Abrindo…", lendo: "Lendo…", revisar: "Revisar", pronto: "Pronto" };
+  const resumo = () => {
+    if (fechado) return;
+    const c = { pronto: 0, revisar: 0, lendo: 0, preparando: 0, duplicado: 0, erro: 0, salvo: 0, salvando: 0 };
+    itens.forEach(it => { c[estado(it)]++; });
+    const pills = [];
+    if (c.preparando + c.lendo) pills.push(`<span class="lt-status"><span class="spin" aria-hidden="true"></span>lendo ${num(c.preparando + c.lendo)}</span>`);
+    if (c.pronto) pills.push(`<span class="lt-status pronto">${plural(c.pronto, "pronto", "prontos")}</span>`);
+    if (c.revisar) pills.push(`<span class="lt-status revisar">${num(c.revisar)} para revisar</span>`);
+    if (c.duplicado) pills.push(`<span class="lt-status duplicado">${plural(c.duplicado, "já cadastrado", "já cadastrados")}</span>`);
+    if (c.erro) pills.push(`<span class="lt-status erro">${num(c.erro)} não ${c.erro === 1 ? "abriu" : "abriram"}</span>`);
+    if (c.salvo) pills.push(`<span class="lt-status salvo">${plural(c.salvo, "salvo", "salvos")}</span>`);
+    q("#lt-resumo").innerHTML = itens.length ? `<b>${plural(itens.length, "arquivo", "arquivos")}</b>${pills.join("")}` : "";
+    if (!itens.length) lista.innerHTML = `<div class="lt-vazio">Nenhum arquivo na lista. Use <b>Adicionar arquivos</b> ou arraste comprovantes para cá.</div>`;
+    else { const v = lista.querySelector(".lt-vazio"); if (v) v.remove(); }
+    const bt = q("#lt-salvar");
+    bt.disabled = !c.pronto || salvandoTudo;
+    bt.textContent = c.pronto ? `Salvar ${plural(c.pronto, "pronto", "prontos")}` : "Salvar prontos";
+    m.title(itens.length ? `Enviar ${plural(itens.length, "comprovante", "comprovantes")}` : "Enviar vários comprovantes");
+  };
+  const atualizar = it => {
+    if (fechado || !it.el) return;
+    const e = estado(it);
+    it.el.dataset.estado = e;
+    const st = it.el.querySelector(".lt-status");
+    st.className = "lt-status " + e;
+    st.innerHTML = (["lendo", "preparando", "salvando"].includes(e) ? `<span class="spin" aria-hidden="true"></span>` : "") + esc(e === "salvo" ? `Salvo · ${it.codigo}` : ROTULO[e]);
+    const msg = it.el.querySelector(".lt-msg");
+    msg.textContent = e === "erro" ? it.erro
+      : e === "duplicado" ? `Este arquivo já está cadastrado (${it.dup}). Ele não será salvo de novo.`
+      : e === "revisar" ? `Falta preencher: ${juntarLista(faltando(it))}.${it.aviso ? " " + it.aviso : ""}`
+      : e === "salvo" ? "" : (it.aviso || "");
+    const travar = ["salvo", "salvando", "erro", "duplicado"].includes(e);
+    it.el.querySelectorAll(".lt-main input, .lt-main select").forEach(c => { c.disabled = travar; });
+    resumo();
+  };
+  const preencherSelects = it => {
+    for (const [t, sel, ops] of [["empresa", it.selE, empresasOpcoes()], ["razao", it.selR, razoesOrd()], ["banco", it.selB, bancosOrd()]]) {
+      const v = sel.value;
+      fillSelect(sel, ops, { placeholder: "Selecione" });
+      if (it.novo[t]) { const o = document.createElement("option"); o.value = "__novo__"; o.textContent = `${it.novo[t].nome} · novo cadastro`; sel.appendChild(o); }
+      sel.value = Array.from(sel.options).some(o => o.value === v) ? v : "";
+    }
+  };
+  const tituloAuto = it => {
+    if (!it.tituloAuto) return;
+    const nome = it.selE.value === "__novo__" && it.novo.empresa ? it.novo.empresa.nome : empresaNome(it.selE.value);
+    if (nome) it.inTitulo.value = limparTitulo(nome + (it.vencimento ? ` — venc. ${fmtData(it.vencimento)}` : ""));
+  };
+
+  // ----- uma linha por arquivo -----
+  const criarItem = file => {
+    const it = { k: ++seq, file, prep: null, hash: null, url: null, preparando: true, lendo: false, salvando: false, salvo: false, codigo: "", erro: "", dup: "", aviso: "", tituloAuto: true, vencimento: "", novo: { empresa: null, razao: null, banco: null } };
+    const el = document.createElement("article");
+    el.className = "lt-item";
+    el.innerHTML = `<button class="lt-thumb thumb" type="button" aria-label="Ampliar ${esc(file.name || "arquivo")}"></button>
+      <div class="lt-main">
+        <div class="lt-top">
+          <input type="text" class="lt-titulo" maxlength="120" aria-label="Título do comprovante">
+          <span class="lt-status"></span>
+          <button class="icon-btn lt-x" type="button" aria-label="Tirar ${esc(file.name || "arquivo")} da lista" title="Tirar da lista">${ICON("x")}</button>
+        </div>
+        <div class="lt-campos">
+          <label class="lt-f"><span>Data do pagamento</span><input type="date" class="lt-data" min="1990-01-01" max="2100-12-31"></label>
+          <label class="lt-f"><span>Valor</span><span class="money-wrap"><span>R$</span><input type="text" class="lt-valor" inputmode="decimal" placeholder="0,00" maxlength="18"></span></label>
+          <label class="lt-f"><span>Beneficiário</span><select class="lt-empresa"></select></label>
+          <label class="lt-f"><span>Razão (MEI)</span><select class="lt-razao"></select></label>
+          <label class="lt-f"><span>Banco</span><select class="lt-banco"></select></label>
+        </div>
+        <p class="lt-msg"></p>
+      </div>`;
+    const g = s => el.querySelector(s);
+    Object.assign(it, { el, inTitulo: g(".lt-titulo"), inData: g(".lt-data"), selE: g(".lt-empresa"), selR: g(".lt-razao"), selB: g(".lt-banco") });
+    it.valorCtl = ligarValor(g(".lt-valor"), () => atualizar(it));
+    it.inTitulo.value = limparTitulo(file.name || "");
+    preencherSelects(it);
+    if (S.razoes.length === 1) { it.selR.value = S.razoes[0].id; it.selR.dataset.padrao = "1"; }
+    it.inTitulo.addEventListener("input", () => { it.tituloAuto = false; atualizar(it); });
+    it.inData.addEventListener("input", () => atualizar(it));
+    [["empresa", it.selE], ["razao", it.selR], ["banco", it.selB]].forEach(([t, sel]) => sel.addEventListener("change", () => {
+      sel.dataset.padrao = "";
+      if (t === "empresa") tituloAuto(it);
+      atualizar(it);
+    }));
+    g(".lt-x").addEventListener("click", () => {
+      if (it.salvando) return;
+      const i = itens.indexOf(it); if (i >= 0) itens.splice(i, 1);
+      el.remove(); if (it.url) URL.revokeObjectURL(it.url);
+      resumo();
+    });
+    g(".lt-thumb").addEventListener("click", () => {
+      if (!it.url) return;
+      modal({ title: it.file.name || "Comprovante", size: "xl", bodyClass: "v-body", body: `<div class="v-stage fit" style="height:100%"><img class="fit" src="${esc(it.url)}" alt="Comprovante"></div>` });
+    });
+    return it;
+  };
+
+  // ----- abrir, conferir duplicado e ler cada arquivo -----
+  const preparar = async it => {
+    if (fechado || !itens.includes(it)) return;
+    const prep = await prepararArquivo(it.file);
+    it.preparando = false;
+    if (prep.erro) { it.erro = prep.erro; atualizar(it); return; }
+    it.prep = prep; it.url = URL.createObjectURL(prep.jpg);
+    it.el.querySelector(".lt-thumb").innerHTML = `<img src="${esc(it.url)}" alt="">`;
+    it.hash = await sha256(it.file);
+    const d = acharDuplicado(it.hash);
+    if (d) { it.dup = d.tipo === "comp" ? `${d.item.codigo}, ${d.item.arquivo}` : "guardado em Arquivos sem vínculo"; atualizar(it); return; }
+    if (itens.some(x => x !== it && x.hash && x.hash === it.hash && !x.dup && itens.indexOf(x) < itens.indexOf(it))) { it.dup = "repetido nesta lista"; atualizar(it); return; }
+    it.lendo = true; atualizar(it);
+    filaLeitura.push(it); bombear();
+  };
+  const bombear = () => {
+    while (!fechado && lendoAgora < 2 && filaLeitura.length) {
+      const it = filaLeitura.shift();
+      if (!itens.includes(it)) continue;
+      lendoAgora++;
+      lerItem(it).catch(() => { it.aviso = "Não consegui ler este comprovante; preencha os campos."; })
+        .finally(() => { lendoAgora--; it.lendo = false; atualizar(it); bombear(); });
+    }
+  };
+  const lerItem = async it => {
+    if (semLeitura) { it.aviso = semLeitura; return; }
+    const leitorFn = await obterLeitor();
+    if (!leitorFn) { semLeitura = leituraBloqueada ? "A leitura automática não está disponível aqui; preencha os campos." : "A leitura automática está desligada; preencha os campos."; it.aviso = semLeitura; return; }
+    const lim = leitorLimites.images;
+    const maxImgs = Math.max(1, Math.min(lim.maxCount || 1, 2)), teto = Math.min(lim.maxInputBytes || 5e6, 5e6);
+    const imgs = [];
+    for (const pg of it.prep.paginas.slice(0, maxImgs)) imgs.push(pg.size > teto ? await reduzirImagem(pg) : pg);
+    let r;
+    for (let tentativa = 0; ; tentativa++) {
+      try { r = await leitorFn.json(promptLeitura(), { images: imgs, effort: "low" }); break; }
+      catch (e) {
+        const c = e && e.code;
+        if (c === "rate_limited" && tentativa < 2) { await sleep(4000 * (tentativa + 1)); continue; }
+        if (c === "sem_chave") semLeitura = "A leitura automática está desligada: adicione sua chave da API em Ajustes.";
+        else if (c === "chave_invalida") semLeitura = "A chave da API foi recusada: confira em Ajustes.";
+        else if (c === "sem_credito") semLeitura = "Sua conta da API está sem créditos.";
+        else if (["not_granted", "sampling_disabled", "not_declared", "images_unavailable", "capability_disabled", "capability_removed"].includes(c)) { leituraBloqueada = true; semLeitura = "A leitura automática não está disponível aqui; preencha os campos."; }
+        it.aviso = semLeitura || "Não consegui ler este comprovante; preencha os campos.";
+        return;
+      }
+    }
+    if (fechado || !itens.includes(it)) return;
+    aplicar(it, r);
+  };
+  const aplicar = (it, r) => {
+    if (!r || typeof r !== "object" || Array.isArray(r) || r.legivel === false) { it.aviso = "Não reconheci um comprovante de pagamento neste arquivo."; return; }
+    if (typeof r.data === "string" && validIso(r.data) && r.data >= "1990-01-01" && r.data <= "2100-12-31" && !it.inData.value) it.inData.value = r.data;
+    it.vencimento = typeof r.vencimento === "string" && validIso(r.vencimento) && r.vencimento >= "1990-01-01" && r.vencimento <= "2100-12-31" ? r.vencimento : "";
+    let cents = null;
+    if (typeof r.valor === "number" && isFinite(r.valor)) cents = Math.round(r.valor * 100);
+    else if (typeof r.valor === "string") cents = r.valor.includes(",") ? lerValorLivre(r.valor) : Math.round(parseFloat(r.valor.replace(/[^\d.]/g, "")) * 100);
+    if (cents > 0 && cents <= VALOR_MAX && !it.valorCtl.get()) it.valorCtl.set(cents);
+    for (const [t, sel] of [["empresa", it.selE], ["razao", it.selR], ["banco", it.selB]]) {
+      if (sel.value && sel.dataset.padrao !== "1") continue;   // a pessoa já escolheu
+      const info = r[t] && typeof r[t] === "object" ? r[t] : null;
+      const id = acharEntidade(t, info);
+      if (id) { sel.value = id; sel.dataset.padrao = ""; }
+      else if (info && typeof info.nome === "string" && info.nome.trim()) {
+        const extra = t === "banco" ? String(info.codigo || "").replace(/\D/g, "") : (typeof info.cnpj === "string" ? info.cnpj : "");
+        it.novo[t] = { nome: info.nome.trim().replace(/\s+/g, " ").slice(0, 80), extra };
+        preencherSelects(it); sel.value = "__novo__"; sel.dataset.padrao = "";
+      }
+    }
+    tituloAuto(it);
+  };
+
+  const adicionar = fs => {
+    const lista2 = Array.from(fs || []);
+    const cabem = lista2.slice(0, Math.max(0, MAX_LOTE - itens.length));
+    if (lista2.length > cabem.length) toast(`Cabem até ${MAX_LOTE} arquivos por vez. ${plural(lista2.length - cabem.length, "arquivo ficou", "arquivos ficaram")} de fora.`, "err");
+    for (const f of cabem) {
+      const it = criarItem(f);
+      itens.push(it); lista.appendChild(it.el); atualizar(it);
+      cadeia = cadeia.then(() => preparar(it)).catch(() => { it.preparando = false; it.erro = "Não foi possível abrir este arquivo."; atualizar(it); });
+    }
+    resumo();
+  };
+
+  // ----- salvar todos os prontos -----
+  const criarPendente = async (t, it) => {
+    const nv = it.novo[t];
+    let id = acharEntidade(t, t === "banco" ? { nome: nv.nome, codigo: nv.extra } : { nome: nv.nome, cnpj: nv.extra });
+    if (!id) {
+      try { id = await salvarEntidade(t, { nome: nv.nome, extra: nv.extra }); }
+      catch (e) { if (e && e.campo === "extra") id = await salvarEntidade(t, { nome: nv.nome, extra: "" }); else throw e; }
+    }
+    return id;
+  };
+  const salvarItem = async it => {
+    const ids = {};
+    for (const [t, sel] of [["empresa", it.selE], ["razao", it.selR], ["banco", it.selB]]) ids[t] = sel.value === "__novo__" ? await criarPendente(t, it) : sel.value;
+    const d = acharDuplicado(it.hash);
+    if (d) { it.dup = d.tipo === "comp" ? `${d.item.codigo}, ${d.item.arquivo}` : "guardado em Arquivos sem vínculo"; return false; }
+    let enviados = null;
+    try {
+      const env = await enviarArquivos(it.prep, it.hash);
+      enviados = env.enviados;
+      const n = proximoNumero(), codigo = "CMP-" + String(n).padStart(4, "0"), agora = nowIso();
+      await tentar(() => db.collection("comprovantes").doc().set({
+        codigo, arquivo: limparTitulo(it.inTitulo.value), data: it.inData.value, valorCentavos: it.valorCtl.get(),
+        empresaId: ids.empresa, razaoId: ids.razao, bancoId: ids.banco, vencimento: it.vencimento || "",
+        imagem: env.imagem, criadoEm: agora, atualizadoEm: agora
+      }));
+      enviados = null;
+      S.config = { ultimo: n };
+      db.doc("config/contador").set({ ultimo: n }).catch(() => {});
+      it.salvo = true; it.codigo = codigo; it.aviso = "";
+      return true;
+    } catch (e) {
+      if (enviados) enviados.forEach(id => assets.delete(id).catch(() => {}));
+      throw e;
+    }
+  };
+  q("#lt-salvar").addEventListener("click", async () => {
+    const prontos = itens.filter(it => estado(it) === "pronto");
+    if (!prontos.length || salvandoTudo) return;
+    salvandoTudo = true; resumo();
+    let ok = 0, falhas = 0;
+    for (const it of prontos) {
+      if (fechado) break;
+      if (estado(it) !== "pronto") continue;
+      it.salvando = true; atualizar(it);
+      q("#lt-status").textContent = `Salvando ${ok + falhas + 1} de ${prontos.length}…`;
+      try { if (await salvarItem(it)) ok++; }
+      catch (e) { falhas++; it.aviso = "Não foi salvo: " + ((e && e.msg) || msgErro(e)); }
+      finally { it.salvando = false; atualizar(it); }
+    }
+    salvandoTudo = false;
+    if (fechado) return;
+    q("#lt-status").textContent = "";
+    resumo();
+    atualizarUso();
+    toast(falhas ? `${plural(ok, "comprovante salvo", "comprovantes salvos")}. ${num(falhas)} não ${falhas === 1 ? "foi salvo" : "foram salvos"}: veja a mensagem em cada um.` : `${plural(ok, "comprovante salvo", "comprovantes salvos")}.`, falhas ? "err" : "");
+  });
+
+  // ----- fechar, adicionar mais, arrastar para a janela -----
+  const fechar = async () => {
+    if (salvandoTudo) { toast("Aguarde terminar de salvar."); return; }
+    const pend = itens.filter(it => !it.salvo && !it.dup && !it.erro).length;
+    if (pend) {
+      const r = await confirmar({ title: "Fechar sem salvar?", ok: "Fechar mesmo assim", danger: true,
+        html: `<p>${pend === 1 ? "1 comprovante ainda não foi salvo e vai sair da lista." : `${num(pend)} comprovantes ainda não foram salvos e vão sair da lista.`}</p>` });
+      if (!r) return;
+    }
+    delete m.el.dataset.busy;
+    m.close();
+  };
+  q("#lt-fechar").addEventListener("click", fechar);
+  const xh = m.el.querySelector(".m-head [data-close]");
+  xh.removeAttribute("data-close");
+  xh.addEventListener("click", fechar);
+  m.onKey = e => { if (e.key === "Escape") { e.preventDefault(); fechar(); } };
+  q("#lt-mais").addEventListener("change", e => { const fs = Array.from(e.target.files || []); e.target.value = ""; adicionar(fs); });
+  m.el.addEventListener("dragover", e => { if (Array.from((e.dataTransfer && e.dataTransfer.types) || []).includes("Files")) e.preventDefault(); });
+  m.el.addEventListener("drop", e => { const fs = Array.from((e.dataTransfer && e.dataTransfer.files) || []); if (fs.length) { e.preventDefault(); e.stopPropagation(); adicionar(fs); } });
+  const hook = () => itens.forEach(it => { if (!it.salvo && !it.salvando) { preencherSelects(it); atualizar(it); } });
+  S.hooks.add(hook);
+  m.onClose = () => { fechado = true; S.hooks.delete(hook); itens.forEach(it => { if (it.url) URL.revokeObjectURL(it.url); }); itens.length = 0; };
+
+  adicionar(arquivos);
+}
+
 /* ================= Substituir imagem ================= */
 function abrirSubstituir(comp) {
   if (!podeEscrever()) return;
@@ -1916,8 +2278,8 @@ function abrirSubstituir(comp) {
       ${ICON("arrow-r")}
       <div class="side-img" id="nova-box">
         <label class="drop" id="drop" style="width:100%;flex-direction:column;text-align:center;padding:18px 10px">
-          <input type="file" id="sb-file" accept=".jpg,.jpeg,.pdf,image/jpeg,application/pdf" aria-label="Escolher o novo comprovante">
-          <span class="drop-ic">${ICON("upload")}</span><span><strong>Novo arquivo</strong><br><small>.jpg, .jpeg ou .pdf</small></span>
+          <input type="file" id="sb-file" accept="${ACEITA}" aria-label="Escolher o novo comprovante">
+          <span class="drop-ic">${ICON("upload")}</span><span><strong>Novo arquivo</strong><br><small>.jpg, .png ou .pdf</small></span>
         </label>
         <img id="sb-img" alt="Nova imagem" hidden><small id="sb-info"></small>
       </div>
@@ -2540,11 +2902,12 @@ document.addEventListener("drop", e => {
   if (!temArquivo(e)) return;
   e.preventDefault();
   if (!podeSoltar()) return;
-  const f = e.dataTransfer.files && e.dataTransfer.files[0];
-  if (f) abrirForm({ modo: "novo", arquivo: f });
+  const fs = Array.from(e.dataTransfer.files || []);
+  if (fs.length > 1) abrirLote(fs);
+  else if (fs[0]) abrirForm({ modo: "novo", arquivo: fs[0] });
 });
 
-window.__app = { modal, toast, confirmar, renderAll: () => renderAll(), novoComArquivo: f => abrirForm({ modo: "novo", arquivo: f }), iniciar: () => { rota(); renderAll(); conectar(); } };
+window.__app = { modal, toast, confirmar, renderAll: () => renderAll(), novoComArquivo: f => abrirForm({ modo: "novo", arquivo: f }), lote: fs => abrirLote(fs), pronto: () => ["comprovantes", "empresas", "razoes", "bancos"].every(k => S.got[k]), iniciar: () => { rota(); renderAll(); conectar(); } };
 })();
 </script>
 
@@ -3149,18 +3512,29 @@ function abrirAjustes() {
 }
 document.addEventListener("click", e => { if (e.target.closest("[data-ajustes]")) { e.preventDefault(); abrirAjustes(); } });
 
-// ---------- Comprovante compartilhado de outro app (Android) ----------
+// ---------- Comprovantes compartilhados do WhatsApp ou de outro app (Android) ----------
 async function receberCompartilhado() {
   const p = new URLSearchParams(location.search);
   if (!p.has("compartilhado")) return;
   history.replaceState(null, "", location.pathname + location.hash);
   try {
-    const c = await caches.open("compartilhado"), r = await c.match("arquivo-compartilhado");
-    if (!r) return;
-    const blob = await r.blob(), nome = decodeURIComponent(r.headers.get("x-nome") || "comprovante");
-    await c.delete("arquivo-compartilhado");
-    const f = new File([blob], nome, { type: blob.type });
-    setTimeout(() => window.__app.novoComArquivo(f), 900);
+    const c = await caches.open("compartilhado");
+    const chaves = (await c.keys()).map(r => r.url).filter(u => /\/arquivo-\d+$/.test(u) || /\/arquivo-compartilhado$/.test(u));
+    chaves.sort((a, b) => (parseInt(a.split("-").pop(), 10) || 0) - (parseInt(b.split("-").pop(), 10) || 0));
+    const arquivos = [];
+    for (const u of chaves) {
+      const r = await c.match(u);
+      if (r) {
+        const blob = await r.blob();
+        arquivos.push(new File([blob], decodeURIComponent(r.headers.get("x-nome") || "comprovante"), { type: blob.type }));
+      }
+      await c.delete(u);
+    }
+    if (!arquivos.length) { toast("Nenhum arquivo chegou do compartilhamento. Tente de novo.", "err"); return; }
+    // espera os cadastros carregarem para a leitura reconhecer beneficiário, razão e banco
+    const inicio = Date.now();
+    while (!window.__app.pronto() && Date.now() - inicio < 8000) await new Promise(r => setTimeout(r, 200));
+    if (arquivos.length > 1) window.__app.lote(arquivos); else window.__app.novoComArquivo(arquivos[0]);
   } catch (e) {}
 }
 
